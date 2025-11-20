@@ -25,7 +25,7 @@ const GenerateEwbByIrnForm = () => {
       subSplyDes: '',
       transName: 'Safe and Secure',
       transDocNo: '10294',
-      transDocDate: '01-12-2020',
+      transDocDate: '11-11-2025',
       vehNo: 'MH20ZZ8888',
       transId: '01ACQPN4602B002',
       pobewb: null,

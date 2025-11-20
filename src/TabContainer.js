@@ -49,6 +49,9 @@ import AddEntityForm from "./AddEntityForm.js";
 import BusinessHierarchyForm from "./BusinessHierarchyForm.js";
 import AssignedPlaceOfBusinessesForm from "./AssignedPlaceOfBusinessesForm.js";
 import AssignedGstinsForm from "./AssignedGstinsForm.js";
+import UploadInvoice from "./UploadInvoice.js";
+import UploadStatus from "./UploadStatus.js";
+import UploadErrors from "./UploadErrors.js";
 
 // ========================================================
 // MAIN COMPONENT
@@ -101,6 +104,11 @@ const TabContainer = () => {
     // Print Invoice
     "print-einvoice": <PrintEInvoiceForm {...props} />,
 
+    // Upload Invoice
+     "Upload -invoice":<UploadInvoice {...props} />,
+     "Upload -status":<UploadStatus {...props} />,
+     "Upload -errors":<UploadErrors {...props} />,
+
     // View Invoice
     "view-list": <ListEInvoicesForm {...props} />,
     "view-details": <InvoiceDetailsForm {...props} />,
@@ -151,6 +159,14 @@ const TabContainer = () => {
     {
       title: "Print",
       tabs: [{ key: "print-einvoice", name: "Print E-Invoice" }],
+    },
+      {
+      title: " Upload Invoice",
+      tabs: [
+        { key: "Upload -invoice", name: "UploadInvoice"},
+        { key: "Upload -status", name: "Uploadstatus" },
+        { key: "Upload -errors", name: "UploadErrors" }
+      ],
     },
     {
       title: "View Invoice",

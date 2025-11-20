@@ -327,23 +327,23 @@ app.get('/proxy/einvoice/print', async (req, res) => {
 });
 
 // 12. VIEW INVOICES (Filter & List Invoices)
-app.post('/proxy/einvoice/list', async (req, res) => {
+app.post('/proxy/onyx/einvoice/view', async (req, res) => {
   try {
     const response = await axios.post(
-      `${BASE_URL}/irisgst/onyx/einvoice/list`,
+      `${BASE_URL}/irisgst/onyx/einvoice/view`,
       req.body,
       {
         headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
+          Accept: "application/json",
+          "Content-Type": "application/json",
           ...authHeaders(req),
         },
       }
     );
     res.json(response.data);
   } catch (error) {
-    res.status(error.response ? error.response.status : 500).json(
-      error.response ? error.response.data : { error: 'Failed to fetch invoice list' }
+    res.status(error.response?.status || 500).json(
+      error.response?.data || { error: "Failed to fetch invoice list" }
     );
   }
 });
@@ -638,6 +638,96 @@ app.get('/proxy/irisgst/mgmt/user/company/filingbusiness', async (req, res) => {
       .json(error.response?.data || { error: 'Proxy failed' });
   }
 });
+
+// UPLOAD INVOICE FILE (CSV / ZIP)
+app.post('/proxy/onyx/upload/invoices', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "File is required" });
+    }
+
+    const companyUniqueCode = req.query.companyUniqueCode;
+    if (!companyUniqueCode) {
+      return res.status(400).json({ error: "companyUniqueCode is required" });
+    }
+
+    const formData = new FormData();
+    formData.append("file", req.file.buffer, req.file.originalname);
+
+    const response = await axios.post(
+      `${BASE_URL}/irisgst/onyx/upload/invoices`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          ...authHeaders(req),
+        },
+        params: { companyUniqueCode },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    res.status(error.response ? error.response.status : 500).json(
+      error.response ? error.response.data : { error: "Failed to upload invoice file" }
+    );
+  }
+});
+// UPLOAD STATUS CHECK
+app.get('/proxy/onyx/upload/status', async (req, res) => {
+  try {
+    const { uploadId } = req.query;
+
+    if (!uploadId) {
+      return res.status(400).json({ error: "uploadId is required" });
+    }
+
+    const response = await axios.get(
+      `${BASE_URL}/irisgst/onyx/upload/status`,
+      {
+        headers: {
+          Accept: "application/json",
+          ...authHeaders(req),
+        },
+        params: { uploadId },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    res.status(error.response ? error.response.status : 500).json(
+      error.response ? error.response.data : { error: "Failed to get upload status" }
+    );
+  }
+});
+// UPLOAD ERROR DETAILS
+app.get('/proxy/onyx/upload/errors', async (req, res) => {
+  try {
+    const { uploadId, page, size } = req.query;
+
+    if (!uploadId) {
+      return res.status(400).json({ error: "uploadId is required" });
+    }
+
+    const response = await axios.get(
+      `${BASE_URL}/irisgst/onyx/upload/errors`,
+      {
+        headers: {
+          Accept: "application/json",
+          ...authHeaders(req),
+        },
+        params: { uploadId, page, size },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    res.status(error.response ? error.response.status : 500).json(
+      error.response ? error.response.data : { error: "Failed to fetch upload errors" }
+    );
+  }
+});
+
 // 404 HANDLER
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found', path: req.originalUrl });
