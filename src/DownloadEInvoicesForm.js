@@ -1,155 +1,167 @@
-// DownloadEInvoicesForm.js
+/// DownloadEInvoicesForm.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
+const STORAGE_KEY = "iris_einvoice_shared_config";
+
 const DownloadEInvoicesForm = ({ previousResponse }) => {
-  // Auto-populate payload from previous response or defaults
+  // Load saved config from localStorage
+  const savedConfig = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+
+  // ========== AUTO-POPULATE GSTIN + COMPANY CODE ==========
+  const initialGstin = previousResponse?.userGstin
+    || previousResponse?.companyGstin
+    || previousResponse?.gstin
+    || savedConfig?.gstin
+    || savedConfig?.userGstin
+    || "";
+
+  const initialCompanyCode = previousResponse?.companyUniqueCode
+    || savedConfig?.companyUniqueCode
+    || previousResponse?.userGstin
+    || "";
+
+  // ========== HEADERS ==========
+  const [headers, setHeaders] = useState({
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    product: "ONYX",
+    companyId: previousResponse?.companyId || savedConfig?.companyId || "",
+    "X-Auth-Token": previousResponse?.token || savedConfig?.token || "",
+  });
+
+  // ========== FORM DATA ==========
   const [formData, setFormData] = useState({
     invStatus: previousResponse?.invStatus || ["IRN_GENERATED", "EWB_GENERATED", "BOTH"],
     catg: previousResponse?.catg || ["B2B", "SEWOP", "SEWP", "EXWP", "EXWOP", "DE"],
-    fromUpDt: previousResponse?.fromUpDt || "2025-11-11",
-    toUpDt: previousResponse?.toUpDt || "2025-11-11",
+    fromUpDt: previousResponse?.fromUpDt || "21/11/2025",
+    toUpDt: previousResponse?.toUpDt || "21/11/2025",
     eligibleForIrn: previousResponse?.eligibleForIrn ?? true,
-    gstin: previousResponse?.gstin || previousResponse?.companyGstin || "",
-    companyUniqueCode: previousResponse?.companyUniqueCode || previousResponse?.companyUniqueCode || "",
+    gstin: initialCompanyCode,
+    companyUniqueCode: initialCompanyCode,
   });
 
-  // Headers with companyId from previous response
-  const [headers, setHeaders] = useState({
-    accept: "application/json",
-    companyId: previousResponse?.companyId || "", // auto-populate
-    "X-Auth-Token": previousResponse?.token || "", // auto-populate
-    product: "ONYX",
-    "Content-Type": "application/json",
-  });
-
-  const [result, setResult] = useState(null);
-  const [downloadId, setDownloadId] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  // Update formData & headers if previousResponse changes dynamically
+  // ========== UPDATE HEADERS IF previousResponse CHANGES ==========
   useEffect(() => {
     if (previousResponse) {
-      setFormData({
-        invStatus: previousResponse.invStatus || formData.invStatus,
-        catg: previousResponse.catg || formData.catg,
-        fromUpDt: previousResponse.fromUpDt || formData.fromUpDt,
-        toUpDt: previousResponse.toUpDt || formData.toUpDt,
-        eligibleForIrn: previousResponse.eligibleForIrn ?? formData.eligibleForIrn,
-        gstin: previousResponse.gstin || previousResponse.companyGstin || formData.gstin,
-        companyUniqueCode: previousResponse.companyUniqueCode || formData.companyUniqueCode,
-      });
-
-      setHeaders((prev) => ({
+      setHeaders(prev => ({
         ...prev,
         companyId: previousResponse.companyId || prev.companyId,
         "X-Auth-Token": previousResponse.token || prev["X-Auth-Token"],
       }));
+
+      setFormData(prev => ({
+        ...prev,
+        gstin: previousResponse.userGstin || previousResponse.companyGstin || prev.gstin,
+        companyUniqueCode: previousResponse.companyUniqueCode || prev.companyUniqueCode,
+      }));
     }
   }, [previousResponse]);
 
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  // ========== INPUT HANDLER ==========
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     if (name === "invStatus" || name === "catg") {
-      const newValue = value.split(",").map((v) => v.trim());
-      setFormData({ ...formData, [name]: newValue });
+      setFormData({
+        ...formData,
+        [name]: value.split(",").map(v => v.trim()).filter(Boolean),
+      });
     } else {
-      setFormData({ ...formData, [name]: type === "checkbox" ? checked : value });
+      setFormData({
+        ...formData,
+        [name]: type === "checkbox" ? checked : value,
+      });
     }
   };
 
-  const requestDownload = async () => {
+  // ========== ONE-CLICK DOWNLOAD ==========
+  const downloadNow = async () => {
     setLoading(true);
     setResult(null);
+
     try {
       const response = await axios.post(
-        "https://stage-api.irisgst.com/irisgst/onyx/download/einvoices",
+        "http://localhost:3001/proxy/onyx/download/einvoices",
         formData,
         { headers }
       );
+
       setResult(response.data);
-      if (response.data.response?.downloadId) {
-        setDownloadId(response.data.response.downloadId);
+
+      const filePath = response.data.response?.filePath;
+      if (filePath) {
+        window.open(filePath, "_blank");
+      } else {
+        alert(`Download started! ID: ${response.data.response?.downloadId}\nCheck IRIS portal → Downloads.`);
       }
     } catch (error) {
-      setResult(error.response?.data || { error: "Failed to request download" });
+      console.error(error);
+      setResult(error.response?.data || { error: "Download failed" });
     } finally {
       setLoading(false);
     }
   };
 
-  const checkStatus = async () => {
-    if (!downloadId) return;
-    setLoading(true);
-    setResult(null);
-    try {
-      const response = await axios.get(
-        `https://stage-api.irisgst.com/irisgst/onyx/download/status?companyCode=${formData.companyUniqueCode}&downloadType=Dnld_Einvoices&downloadId=${downloadId}`,
-        { headers }
-      );
-      setResult(response.data);
-      if (response.data.response?.status === "COMPLETED" && response.data.response.filePath) {
-        window.open(response.data.response.filePath, "_blank");
-      }
-    } catch (error) {
-      setResult(error.response?.data || { error: "Failed to check status" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // ========== RENDER ==========
   return (
-    <div style={{ maxWidth: "600px", margin: "0 auto", fontFamily: "Arial, sans-serif" }}>
-      <h2>Download E-Invoices</h2>
+    <div style={{ maxWidth: "700px", margin: "30px auto", fontFamily: "Segoe UI, Arial" }}>
+      <h2 style={{ color: "#1e3a8a" }}>Download E-Invoices (One-Click)</h2>
 
-      {/* Headers */}
-      <div style={{ marginBottom: "1rem" }}>
-        <h3>Request Headers:</h3>
-        <pre style={{ background: "#f5f5f5", padding: "10px" }}>{JSON.stringify(headers, null, 2)}</pre>
+      <div style={{ marginBottom: 20, padding: 15, background: "#f0f8ff", borderRadius: 8 }}>
+        <strong>Headers:</strong>
+        <pre style={{ fontSize: "12px", margin: "8px 0" }}>
+          {JSON.stringify(headers, null, 2)}
+        </pre>
       </div>
 
-      {/* Payload */}
-      <div style={{ marginBottom: "1rem" }}>
-        <h3>Request Payload:</h3>
-        {Object.keys(formData).map((key) => (
-          <div key={key} style={{ marginBottom: "5px" }}>
-            <label>{key}:</label>
-            {typeof formData[key] === "boolean" ? (
-              <input
-                name={key}
-                type="checkbox"
-                checked={formData[key]}
-                onChange={handleChange}
-              />
-            ) : (
-              <input
-                name={key}
-                value={Array.isArray(formData[key]) ? formData[key].join(",") : formData[key]}
-                onChange={handleChange}
-                style={{ width: "100%" }}
-              />
-            )}
-          </div>
-        ))}
-      </div>
+      {Object.keys(formData).map((key) => (
+        <div key={key} style={{ marginBottom: 12 }}>
+          <label style={{ display: "inline-block", width: 180, fontWeight: "bold" }}>{key}:</label>
+          <input
+            name={key}
+            type={typeof formData[key] === "boolean" ? "checkbox" : "text"}
+            checked={typeof formData[key] === "boolean" ? formData[key] : undefined}
+            value={Array.isArray(formData[key]) ? formData[key].join(", ") : formData[key]}
+            onChange={handleChange}
+            style={{ width: "380px", padding: 8, borderRadius: 4, border: "1px solid #ccc" }}
+          />
+        </div>
+      ))}
 
-      {/* Buttons */}
-      <div style={{ marginBottom: "1rem" }}>
-        <button onClick={requestDownload} disabled={loading} style={{ marginRight: "10px" }}>
-          {loading ? "Requesting..." : "Request Download"}
+      <div style={{ marginTop: 30 }}>
+        <button
+          onClick={downloadNow}
+          disabled={loading}
+          style={{
+            padding: "14px 32px",
+            fontSize: 18,
+            background: "#dc2626",
+            color: "white",
+            border: "none",
+            borderRadius: 8,
+            cursor: loading ? "not-allowed" : "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          {loading ? "Processing..." : "🚀 DOWNLOAD E-INVOICES NOW"}
         </button>
-        {downloadId && (
-          <button onClick={checkStatus} disabled={loading}>
-            {loading ? "Checking..." : "Check Status & Download"}
-          </button>
-        )}
       </div>
 
-      {/* Response */}
       {result && (
-        <div>
-          <h3>Response:</h3>
-          <pre style={{ background: "#e8f0fe", padding: "10px" }}>{JSON.stringify(result, null, 2)}</pre>
+        <div style={{ marginTop: 30 }}>
+          <h3>Result</h3>
+          <pre style={{
+            background: result.response?.filePath ? "#ecfdf5" : "#fef2f2",
+            padding: 15,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+            overflow: "auto"
+          }}>
+            {JSON.stringify(result, null, 2)}
+          </pre>
         </div>
       )}
     </div>

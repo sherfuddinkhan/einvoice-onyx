@@ -5,6 +5,10 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 
 const app = express();
+// ADD THIS AT THE TOP
+const multer = require("multer");
+const upload = multer(); // memory storage (buffer)
+const FormData = require("form-data");
 const PORT = 3001;
 
 // MIDDLEWARE
@@ -18,10 +22,11 @@ app.use(bodyParser.json());
 const BASE_URL = 'https://stage-api.irisgst.com';
 
 // Helper to forward auth headers
+// Case-insensitive auth headers (critical fix!)
 const authHeaders = (req) => ({
-  'X-Auth-Token': req.headers['x-auth-token'],
-  'companyId': req.headers['companyid'],
-  'product': req.headers['product'],
+  "X-Auth-Token": req.headers["x-auth-token"] || req.headers["X-Auth-Token"],
+  companyId: req.headers.companyid || req.headers.CompanyId || req.headers.companyId,
+  product: req.headers.product || "ONYX",
 });
 
 // 1. LOGIN (already working)
@@ -372,26 +377,41 @@ app.get('/proxy/einvoice/details', async (req, res) => {
 });
 
 // 14. REQUEST E-INVOICE DOWNLOAD
-app.post('/proxy/download/einvoices', async (req, res) => {
+// ====================== DOWNLOAD E-INVOICES (ONE-CLICK) ======================
+app.post("/proxy/onyx/download/einvoices", async (req, res) => {
+  console.log("Download request received");
+  console.log("Headers:", req.headers);
+  console.log("Payload:", req.body);
+
   try {
     const response = await axios.post(
       `${BASE_URL}/irisgst/onyx/download/einvoices`,
       req.body,
       {
         headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          product: "ONYX",
           ...authHeaders(req),
         },
+        timeout: 120000, // 2 minutes
       }
     );
+
+    console.log("IRIS Success:", response.data);
+
+    // For small date ranges → IRIS returns filePath immediately!
     res.json(response.data);
+
   } catch (error) {
-    res.status(error.response ? error.response.status : 500).json(
-      error.response ? error.response.data : { error: 'Failed to initiate e-invoice download' }
+    console.error("IRIS Download Error:", error.response?.data || error.message);
+    res.status(error.response?.status || 500).json(
+      error.response?.data || { error: "Failed to initiate download" }
     );
   }
 });
+
+
 
 // 15. REQUEST GSTR-1 DOWNLOAD
 app.post('/proxy/download/gstr1', async (req, res) => {
@@ -423,28 +443,31 @@ app.post('/proxy/download/gstr1', async (req, res) => {
 });
 
 // 16. CHECK DOWNLOAD STATUS (E-Invoice or GSTR-1)
-app.get('/proxy/download/status', async (req, res) => {
+// CORRECT E-INVOICE + GSTR1 DOWNLOAD STATUS ROUTE
+app.get('/proxy/onyx/download/status', async (req, res) => {
   try {
-    const { companyCode, downloadType } = req.query;
-    if (!companyCode || !downloadType) {
+    const { companyCode, downloadType, downloadId } = req.query;
+
+    if (!companyCode || !downloadType || !downloadId) {
       return res.status(400).json({
-        error: 'Missing required query parameters: companyCode, downloadType'
+        error: 'Missing required query params: companyCode, downloadType, downloadId'
       });
     }
 
-    const targetUrl = `${BASE_URL}/irisgst/onyx/download/status`;
-    const response = await axios.get(targetUrl, {
-      params: { companyCode, downloadType },
+    const response = await axios.get(`${BASE_URL}/irisgst/onyx/download/status`, {
+      params: { companyCode, downloadType, downloadId },
       headers: {
-        'Accept': 'application/json',
+        Accept: "application/json",
+        product: "ONYX",
         ...authHeaders(req),
       },
     });
 
     res.json(response.data);
   } catch (error) {
-    res.status(error.response ? error.response.status : 500).json(
-      error.response ? error.response.data : { error: 'Failed to check download status' }
+    console.error("Download status error:", error.response?.data || error.message);
+    res.status(error.response?.status || 500).json(
+      error.response?.data || { error: "Failed to check download status" }
     );
   }
 });
@@ -639,6 +662,7 @@ app.get('/proxy/irisgst/mgmt/user/company/filingbusiness', async (req, res) => {
   }
 });
 
+
 // UPLOAD INVOICE FILE (CSV / ZIP)
 app.post('/proxy/onyx/upload/invoices', upload.single('file'), async (req, res) => {
   try {
@@ -729,9 +753,13 @@ app.get('/proxy/onyx/upload/errors', async (req, res) => {
 });
 
 // 404 HANDLER
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found', path: req.originalUrl });
-});
+//Middleware
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3002'],
+  credentials: true
+}));
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // START SERVER
 app.listen(PORT, '0.0.0.0', () => {
