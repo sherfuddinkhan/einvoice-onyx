@@ -48,47 +48,58 @@ const GetEwbByIrnForm = () => {
     }
   }, []);
 
-  const fetchEWB = async () => {
-    if (!config.params.irn.trim()) {
-      alert('Please enter or select an IRN');
-      return;
-    }
+ const fetchEWB = async () => {
+  if (!config.params.irn.trim()) {
+    alert('Please enter or select an IRN');
+    return;
+  }
 
-    setLoading(true);
-    setResponse(null);
+  setLoading(true);
+  setResponse(null);
 
-    const queryString = new URLSearchParams({
-      irn: config.params.irn,
-      userGstin: config.params.userGstin,
-      updateFlag: config.params.updateFlag.toString()
-    }).toString();
+  const queryString = new URLSearchParams({
+    irn: config.params.irn,
+    userGstin: config.params.userGstin,
+    updateFlag: config.params.updateFlag.toString()
+  }).toString();
 
-    const fullUrl = `${config.proxyBase}${config.endpoint}?${queryString}`;
+  const fullUrl = `${config.proxyBase}${config.endpoint}?${queryString}`;
 
-    try {
-      const res = await fetch(fullUrl, {
-        method: 'GET',
-        headers: config.headers
-      });
+  try {
+    const res = await fetch(fullUrl, {
+      method: 'GET',
+      headers: config.headers
+    });
 
-      const data = await res.json();
-      const result = {
-        url: fullUrl,
-        status: res.status,
-        body: data,
-        time: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    const data = await res.json();
+
+    // Save response in state
+    const result = {
+      url: fullUrl,
+      status: res.status,
+      body: data,
+      time: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    };
+    setResponse(result);
+
+    // ✅ Save relevant fields to localStorage
+    if (res.ok && data.status === 'SUCCESS') {
+      const ewbData = {
+        GenGstin: data.response.GenGstin,
+        EwbNo: data.response.EwbNo,
+        EwbDt: data.response.EwbDt,
+        EwbValidTill: data.response.EwbValidTill
       };
-      setResponse(result);
-
-      if (res.ok && data.status === 'SUCCESS') {
-        alert('E-Way Bill fetched successfully!');
-      }
-    } catch (err) {
-      setResponse({ error: err.message });
-    } finally {
-      setLoading(false);
+      localStorage.setItem('LAST_EWB_DATA', JSON.stringify(ewbData));
+      alert('E-Way Bill fetched successfully and stored!');
     }
-  };
+  } catch (err) {
+    setResponse({ error: err.message });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const isReady = config.headers.companyId && config.headers['X-Auth-Token'] && config.params.irn;
 

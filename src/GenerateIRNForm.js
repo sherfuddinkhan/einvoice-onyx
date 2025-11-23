@@ -214,7 +214,7 @@ const GenerateIRNForm = () => {
     const [response, setResponse] = useState(null);
 
     const [payload, setPayload] = useState({
-        userGstin: '',
+        userGstin: '01AAACI9260R002',
         supplyType: 'O',
         ntr: 'Inter',
         docType: 'RI',

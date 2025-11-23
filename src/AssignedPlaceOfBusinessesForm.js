@@ -1,154 +1,160 @@
-// AssignedPlaceOfBusinessesForm.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
-const AssignedPlaceOfBusinessesForm = ({ authToken, defaultCompanyId }) => {
-  const [selectedCompanyId, setSelectedCompanyId] = useState(defaultCompanyId || "");
+const STORAGE_KEY = "iris_einvoice_shared_config";
+
+const AssignedPlaceOfBusinessesForm = ({ previousResponse }) => {
+  const savedConfig = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+
+  // ======================================================
+  // Headers & query param state (auto-populated)
+  // ======================================================
+  const [config, setConfig] = useState({
+    proxyBase: "http://localhost:3001/proxy",
+    endpoint: "/user/getAssignedPlaceOfBusinesses",
+
+    headers: {
+      Accept: "application/json",
+      companyId:
+        previousResponse?.companyId || savedConfig?.companyId || "",
+      "X-Auth-Token":
+        previousResponse?.token || savedConfig?.token || "",
+      product: "ONYX",
+    },
+    queryCompanyId:
+      previousResponse?.companyId || savedConfig?.companyId || "",
+  });
+
   const [pobList, setPobList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rawResponse, setRawResponse] = useState(null);
 
-  // Request headers & payload state
-  const [headers, setHeaders] = useState({
-    accept: "application/json",
-    companyId: defaultCompanyId || "",
-    "X-Auth-Token": authToken || "",
-    product: "ONYX",
-    "Content-Type": "application/json",
-  });
+  // ======================================================
+  // Auto-save config to localStorage
+  // ======================================================
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      companyId: config.headers.companyId,
+      token: config.headers["X-Auth-Token"]
+    }));
+  }, [config.headers]);
 
-  const [payload, setPayload] = useState({
-    companyid: defaultCompanyId || "",
-  });
+  // ======================================================
+  // Update headers or query param manually
+  // ======================================================
+  const updateHeader = (key, value) => {
+    setConfig((prev) => ({
+      ...prev,
+      headers: { ...prev.headers, [key]: value },
+    }));
+  };
 
-  // API response
-  const [apiResponse, setApiResponse] = useState(null);
+  const updateQuery = (value) => {
+    setConfig((prev) => ({ ...prev, queryCompanyId: value }));
+  };
 
+  // ======================================================
   // Fetch POB list
+  // ======================================================
   const fetchPOBList = async () => {
-    if (!payload.companyid) return;
+    if (!config.queryCompanyId) {
+      setError("Company ID is required");
+      return;
+    }
 
     setLoading(true);
     setError("");
-    setApiResponse(null);
+    setPobList([]);
+    setRawResponse(null);
+
+    const finalURL = `${config.proxyBase}${config.endpoint}?companyid=${config.queryCompanyId}`;
 
     try {
-      const response = await axios.get(
-        "https://stage-api.irisgst.com/irisgst/mgmt/user/getAssignedPlaceOfBusinesses",
-        {
-          headers,
-          params: payload,
-        }
-      );
+      const res = await axios.get(finalURL, {
+        headers: config.headers,
+      });
 
-      setApiResponse(response.data);
+      setRawResponse(res.data);
 
-      if (response.data.status === "SUCCESS") {
-        setPobList(response.data.response);
-        if (response.data.response.length > 0) {
-          setSelectedCompanyId(response.data.response[0].companyId);
-        }
+      if (res.data.status === "SUCCESS" && Array.isArray(res.data.response)) {
+        setPobList(res.data.response);
       } else {
-        setError("Failed to fetch Place of Businesses.");
+        setError("Failed to fetch assigned places of business");
       }
     } catch (err) {
-      console.error(err);
-      setError("Error fetching Place of Businesses.");
-      setApiResponse(err.response ? err.response.data : { error: "Request failed" });
+      setError(err.message || "Request failed");
+      setRawResponse(err.response?.data || null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  useEffect(() => {
-    if (defaultCompanyId) {
-      fetchPOBList();
-    }
-  }, [defaultCompanyId]);
+  const finalURL = `${config.proxyBase}${config.endpoint}?companyid=${config.queryCompanyId}`;
 
-  // Handle form inputs
-  const handleHeaderChange = (e) => {
-    setHeaders({ ...headers, [e.target.name]: e.target.value });
-  };
-
-  const handlePayloadChange = (e) => {
-    setPayload({ ...payload, [e.target.name]: e.target.value });
-  };
-
+  // ======================================================
+  // UI
+  // ======================================================
   return (
-    <div style={{ maxWidth: "700px", margin: "20px auto", fontFamily: "Arial, sans-serif" }}>
-      <h3>Assigned Place of Businesses</h3>
+    <div style={{ padding: 20, fontFamily: "Arial" }}>
+      <h2>Assigned Place of Businesses</h2>
 
-      {/* POB Dropdown */}
-      <div style={{ marginBottom: "20px" }}>
-        <label>Select Place of Business:</label>
-        <select
-          value={selectedCompanyId}
-          onChange={(e) => setSelectedCompanyId(e.target.value)}
-          style={{ width: "100%", padding: "10px", fontSize: "16px", marginTop: "5px" }}
-        >
-          <option value="">-- Select Place of Business --</option>
-          {pobList.map((pob) => (
-            <option key={pob.companyId} value={pob.companyId}>
-              {pob.companyName} ({pob.cmpPincode})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Editable Headers */}
-      <div style={{ marginBottom: "20px" }}>
-        <h4>📌 Request Headers (Editable)</h4>
-        {Object.keys(headers).map((key) => (
-          <div key={key} style={{ marginBottom: "5px" }}>
-            <label>{key}:</label>
-            <input
-              type="text"
-              name={key}
-              value={headers[key]}
-              onChange={handleHeaderChange}
-              style={{ width: "100%", padding: "5px", fontSize: "14px" }}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Editable Payload */}
-      <div style={{ marginBottom: "20px" }}>
-        <h4>📌 Request Payload</h4>
-        <textarea
-          name="companyid"
-          value={JSON.stringify(payload, null, 2)}
-          onChange={(e) => {
-            try {
-              setPayload(JSON.parse(e.target.value));
-            } catch {
-              // ignore invalid JSON while typing
-            }
-          }}
-          rows={6}
-          style={{ width: "100%", fontFamily: "monospace", fontSize: "14px", padding: "10px" }}
+      <div>
+        <label>Query Param (companyid):</label>
+        <input
+          value={config.queryCompanyId}
+          onChange={(e) => updateQuery(e.target.value)}
+          style={{ padding: 6, marginLeft: 10 }}
         />
       </div>
 
-      {/* Fetch Button */}
+      <h3>Headers (Editable)</h3>
+      {Object.entries(config.headers).map(([key, value]) => (
+        <div key={key} style={{ marginBottom: 10 }}>
+          <label style={{ width: 140, display: "inline-block" }}>{key}:</label>
+          <input
+            type={key === "X-Auth-Token" ? "password" : "text"}
+            value={value}
+            onChange={(e) => updateHeader(key, e.target.value)}
+            style={{ padding: 6, width: 300 }}
+          />
+        </div>
+      ))}
+
       <button
         onClick={fetchPOBList}
-        style={{ padding: "10px 20px", fontSize: "16px", cursor: "pointer" }}
+        disabled={loading}
+        style={{ padding: "8px 16px", marginTop: 10 }}
       >
-        Fetch POBs
+        {loading ? "Loading..." : "Fetch POBs"}
       </button>
 
-      {/* API Response */}
-      <div style={{ marginTop: "20px" }}>
-        <h4>📌 API Response</h4>
-        {loading ? (
-          <p>Loading...</p>
-        ) : (
-          <pre style={{ background: "#f5f5f5", padding: "10px" }}>
-            {JSON.stringify(apiResponse, null, 2)}
+      {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
+
+      {pobList.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <h3>POB List ({pobList.length})</h3>
+          <ul>
+            {pobList.map((pob) => (
+              <li key={pob.companyId}>
+                {pob.companyName} ({pob.cmpPincode})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {rawResponse && (
+        <div style={{ marginTop: 20 }}>
+          <h3>Raw Response</h3>
+          <pre style={{ background: "#eee", padding: 10 }}>
+            {JSON.stringify(rawResponse, null, 2)}
           </pre>
-        )}
-        {error && <p style={{ color: "red" }}>{error}</p>}
+        </div>
+      )}
+
+      <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+        Request URL: {finalURL}
       </div>
     </div>
   );

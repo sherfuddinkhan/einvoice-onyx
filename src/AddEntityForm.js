@@ -1,46 +1,66 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
+const STORAGE_KEY = "iris_einvoice_shared_config";
+
 const AddEntityForm = ({ previousResponse }) => {
-  // formData will auto-populate from previous response if available
+  // Load saved config first
+  const savedConfig = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+
+ const initialCompanyCode =
+  previousResponse?.response?.companyUniqueCode ||
+  savedConfig?.companyUniqueCode ||
+  previousResponse?.response?.userGstin ||
+  "";
+
+   const initialCompanyName =
+  previousResponse?.response?.companyname ||
+  savedConfig?.companyname ||
+  "";
+
+
+  // ------------ ---------- FORM DATA ----------------------
   const [formData, setFormData] = useState({
-    companyname: "",
-    pan: "",
-    address: "",
+    companyname: " ",
+    roleName: "Admin",
+    id: "",
+   gstinno: "27AAACI9260R1Z4 ",
+   parentid: previousResponse?.response?.companyid || savedConfig?.companyId || "",
+    state: "",
+   "pan": "AHYPN4137B",
     entitytype: "BUSINESS",
+    address: "",
+    pincode: "",
   });
 
-  // headers will auto-populate from previous response or default values
+  // ---------------------- HEADERS ----------------------
   const [headers, setHeaders] = useState({
-    accept: "application/json",
-    companyId: "", // auto-populated from previous response
-    "X-Auth-Token": "", // auto-populated
+    companyId:
+      previousResponse?.companyId ||
+      savedConfig?.companyId ||
+      "",
+    "X-Auth-Token":
+      previousResponse?.token ||
+      savedConfig?.token ||
+      "",
     product: "ONYX",
-    "Content-Type": "application/json",
   });
 
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Auto-populate formData and headers from previous API response
+  // Auto-populate headers when previousResponse changes
   useEffect(() => {
-    if (previousResponse?.response) {
-      // populate headers
+    if (previousResponse) {
       setHeaders((prev) => ({
         ...prev,
-        companyId: previousResponse.response.companyid || prev.companyId,
-        "X-Auth-Token": previousResponse.authToken || prev["X-Auth-Token"],
-        product: previousResponse.product || prev.product,
-      }));
-
-      // populate formData with response attributes
-      setFormData((prev) => ({
-        ...prev,
-        ...previousResponse.response,
+        companyId: previousResponse.companyId || prev.companyId,
+        "X-Auth-Token": previousResponse.token || prev["X-Auth-Token"],
       }));
     }
   }, [previousResponse]);
 
+  // ---------------------- Update Form ----------------------
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -49,65 +69,76 @@ const AddEntityForm = ({ previousResponse }) => {
     setHeaders({ ...headers, [e.target.name]: e.target.value });
   };
 
+  // ---------------------- API CALL ----------------------
   const addEntity = async () => {
     setLoading(true);
     setResult(null);
 
     try {
       const response = await axios.put(
-        "https://stage-api.irisgst.com/irisgst/mgmt/company/business",
+        "http://localhost:3001/proxy/company/business",
         formData,
-        { headers }
+        {
+          headers: headers,
+        }
       );
 
-      // Auto-populate formData and headers for next addition
-      setFormData((prev) => ({ ...prev, ...response.data.response }));
-      setHeaders((prev) => ({
-        ...prev,
-        companyId: response.data.response.companyid || prev.companyId,
-      }));
-
       setResult(response.data);
+
+      // Save config for future auto-fill
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          companyId: headers.companyId,
+          token: headers["X-Auth-Token"],
+          companyname: formData.companyname,
+          companyUniqueCode: formData.gstinno,
+        })
+      );
     } catch (error) {
-      setResult(error.response?.data || { error: "Failed to add entity" });
+      setResult(
+        error.response?.data || {
+          error: "Failed to add entity",
+        }
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ---------------------- UI ----------------------
   return (
     <div style={{ padding: 20 }}>
-      <h2>Add Entity (Root / Legal / Filing / Business)</h2>
+      <h2>Add Entity (POB/ Legal / Filing / Business)</h2>
 
-      {/* Input Form */}
-      {Object.keys(formData).map((key) => {
-        if (["authToken", "product", "companyId"].includes(key)) return null;
-        return (
-          <div key={key} style={{ marginBottom: 8 }}>
-            <label style={{ width: 120, display: "inline-block" }}>{key}:</label>
-            {key === "entitytype" ? (
-              <select name={key} value={formData[key]} onChange={handleChange}>
-                <option value="BUSINESS">BUSINESS</option>
-                <option value="ROOT">ROOT</option>
-                <option value="LEGAL">LEGAL</option>
-                <option value="FILING">FILING</option>
-              </select>
-            ) : (
-              <input name={key} value={formData[key] || ""} onChange={handleChange} />
-            )}
-          </div>
-        );
-      })}
+      {/* FORM FIELDS */}
+      {Object.keys(formData).map((key) => (
+        <div key={key} style={{ marginBottom: 10 }}>
+          <label style={{ width: 120, display: "inline-block" }}>{key}:</label>
+
+          {key === "entitytype" ? (
+            <select name={key} value={formData[key]} onChange={handleChange}>
+              <option value="ROOT">ROOT</option>
+              <option value="LEGAL">LEGAL</option>
+              <option value="FILING">FILING</option>
+              <option value="BUSINESS">BUSINESS</option>
+            </select>
+          ) : (
+            <input
+              name={key}
+              value={formData[key]}
+              onChange={handleChange}
+              style={{ width: 300 }}
+            />
+          )}
+        </div>
+      ))}
 
       <button onClick={addEntity} disabled={loading}>
         {loading ? "Processing..." : "Add Entity"}
       </button>
 
-      <br />
-      <br />
-
-      {/* Editable Headers */}
-      <h3>📌 Request Headers (Editable):</h3>
+      <h3>Headers</h3>
       {Object.keys(headers).map((key) => (
         <div key={key} style={{ marginBottom: 6 }}>
           <label style={{ width: 120, display: "inline-block" }}>{key}:</label>
@@ -115,34 +146,20 @@ const AddEntityForm = ({ previousResponse }) => {
             name={key}
             value={headers[key]}
             onChange={handleHeaderChange}
-            style={{ width: 400 }}
+            style={{ width: 300 }}
           />
         </div>
       ))}
 
-      {/* Payload Preview */}
-      <h3>📌 Request Payload:</h3>
-      <pre
-        style={{
-          background: "#111",
-          color: "#0ff",
-          padding: "10px",
-          borderRadius: "5px",
-        }}
-      >
-        {JSON.stringify(formData, null, 2)}
-      </pre>
-
-      {/* Response */}
       {result && (
         <>
-          <h3>📌 Response:</h3>
+          <h3>Response</h3>
           <pre
             style={{
               background: "#000",
-              color: "#fff",
-              padding: "10px",
-              borderRadius: "5px",
+              color: "#0f0",
+              padding: 10,
+              borderRadius: 5,
             }}
           >
             {JSON.stringify(result, null, 2)}

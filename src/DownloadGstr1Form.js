@@ -1,93 +1,86 @@
 import React, { useState, useEffect } from 'react';
 
-const STORAGE_KEY = 'iris_gstr1_shared_config';
+const STORAGE_KEY = "iris_einvoice_shared_config";
 
-const DownloadGstr1Form = ({ loginResponse }) => {
-  const saved = localStorage.getItem(STORAGE_KEY);
+// Helper to get current return period (MMYYYY)
+const getCurrentPeriod = () => {
+  const now = new Date();
+  return String(now.getMonth() + 1).padStart(2, '0') + now.getFullYear();
+};
 
-  const getCurrentPeriod = () => {
-    const now = new Date();
-    return String(now.getMonth() + 1).padStart(2, '0') + now.getFullYear();
-  };
+const DownloadGstr1Form = ({ previousResponse }) => {
+  const savedConfig = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
 
-  // --- State Initialization ---
-  const [config, setConfig] = useState({
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      companyId: '',
-      'X-Auth-Token': '',
-      product: 'ONYX',
-    },
-    body: {
-      gstin: '',
-      returnPeriod: getCurrentPeriod(),
-    },
+  // ---------- STATE ----------
+  const [headers, setHeaders] = useState({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    companyId: '',          // auto-populated
+    'X-Auth-Token': '',     // auto-populated
+    product: 'ONYX',
   });
+
+ const [body, setBody] = useState({
+  companyUniqueCode: '', // <-- ADD THIS
+  gstin: '',
+  returnPeriod: getCurrentPeriod(),
+});
+
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [showToken, setShowToken] = useState(false);
 
-  // --- Auto-populate headers and body ---
+  // ---------- AUTO-POPULATE HEADERS AND BODY ----------
   useEffect(() => {
-    let companyId = '';
-    let token = '';
-    let product = 'ONYX';
-    let gstin = '';
+    const autoCompanyId =
+      previousResponse?.response?.companyid ||
+      savedConfig.companyId ||
+      "";
 
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        companyId = parsed.companyId || '';
-        token = parsed.token || '';
-        gstin = parsed.gstin || '';
-      } catch {}
-    }
+    const autoToken =
+      previousResponse?.response?.token ||
+      savedConfig.token ||
+      "";
 
-    if (loginResponse?.response) {
-      const resp = loginResponse.response;
-      companyId = resp.companyid || resp.rootCompanyid || companyId;
-      token = resp.token || token;
-      product = resp.products?.includes('ONYX') ? 'ONYX' : product;
-    }
+    const autoGstin =
+      previousResponse?.response?.companyUniqueCode ||
+      savedConfig.companyUniqueCode ||
+      "";
 
-    setConfig(prev => ({
-      headers: { ...prev.headers, companyId, 'X-Auth-Token': token, product },
-      body: { ...prev.body, gstin },
-    }));
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ companyId, token, gstin })
-    );
-  }, [loginResponse]);
-
-  // --- Generic input handler ---
-  const handleBodyChange = (key, value) => {
-    setConfig(prev => ({
+    setHeaders(prev => ({
       ...prev,
-      body: { ...prev.body, [key]: value },
+      companyId: autoCompanyId,
+      'X-Auth-Token': autoToken,
+      product: 'ONYX',
     }));
+
+    setBody(prev => ({
+      ...prev,
+      gstin: autoGstin,
+      companyUniqueCode:autoGstin
+    }));
+
+    // Save back to localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      companyId: autoCompanyId,
+      token: autoToken,
+      companyUniqueCode: autoGstin
+    }));
+  }, [previousResponse]);
+
+  // ---------- HANDLERS ----------
+  const handleBodyChange = (key, value) => {
+    setBody(prev => ({ ...prev, [key]: value }));
   };
 
-  // --- Save to storage ---
-  const saveToStorage = () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        companyId: config.headers.companyId,
-        token: config.headers['X-Auth-Token'],
-        gstin: config.body.gstin,
-      })
-    );
+  const handleHeaderChange = (key, value) => {
+    setHeaders(prev => ({ ...prev, [key]: value }));
   };
 
-  // --- API Call ---
+  // ---------- API CALL ----------
   const startDownload = async () => {
-    const { headers, body } = config;
-    if (!body.gstin || !headers.companyId || !headers['X-Auth-Token']) {
-      alert('GSTIN, Company ID, or Auth Token missing!');
+    if (!headers.companyId || !headers['X-Auth-Token'] || !body.gstin ||body.companyUniqueCode || !body.returnPeriod) {
+      alert('Missing Company ID, Auth Token, GSTIN, or Return Period!');
       return;
     }
 
@@ -104,55 +97,52 @@ const DownloadGstr1Form = ({ loginResponse }) => {
       const data = await res.json();
       setResult(data);
 
-      if (res.ok && (data.status === 'SUCCESS' || data.response?.downloadId)) {
-        saveToStorage();
-        alert(
-          `GSTR-1 Download Started!\nDownload ID: ${data.response?.downloadId || 'Check IRIS Portal'}`
-        );
-      } else if (!res.ok) {
+      if (res.ok && data.status === 'SUCCESS') {
+        alert(`GSTR-1 Download Requested!\nCheck IRIS Portal`);
+      } else {
         alert(`API Error: ${data.message || 'Unknown response from server.'}`);
       }
     } catch (err) {
       setResult({ error: err.message });
-      alert(`Network/Fetch Error: ${err.message}`);
+      alert(`Network Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const isReady =
-    config.headers.companyId && config.headers['X-Auth-Token'] && config.body.gstin;
+  const isReady = headers.companyId && headers['X-Auth-Token'] && body.gstin && body.returnPeriod;
 
-  // --- Render ---
+  // ---------- RENDER ----------
   return (
     <div style={{ padding: '30px', background: '#fff8e1', minHeight: '100vh', fontFamily: 'Segoe UI' }}>
       <h1 style={{ color: '#d32f2f', fontSize: '36px' }}>GSTR-1 Download Request 🇮🇳</h1>
-      <p style={{ color: '#666', fontSize: '16px' }}>Headers and GSTIN auto-populated from login response or last session.</p>
+      <p style={{ color: '#666', fontSize: '16px' }}>Headers and GSTIN auto-populated from login or last session.</p>
 
       <div style={{ background: 'white', padding: '35px', borderRadius: '20px', maxWidth: '900px', margin: '20px auto', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
         
-        {/* Headers Preview */}
-        <h2 style={{ color: '#d84315', borderBottom: '3px solid #ff8a65', paddingBottom: '10px' }}>Request Headers</h2>
-        <pre style={{ background: '#f5f5f5', padding: '20px', borderRadius: '12px', fontFamily: 'monospace', margin: '20px 0', border: '2px solid #ff8a65' }}>
-          {JSON.stringify(config.headers, null, 2)}
-        </pre>
-
-        {/* Body Preview */}
-        <h2 style={{ color: '#d84315', borderBottom: '3px solid #ff8a65', paddingBottom: '10px', marginTop: '30px' }}>Request Body</h2>
-        <pre style={{ background: '#263238', color: '#00e676', padding: '20px', borderRadius: '12px', fontFamily: 'monospace', margin: '20px 0', border: '2px solid #ff8a65' }}>
-          {JSON.stringify(config.body, null, 2)}
-        </pre>
-
-        {/* Editable Fields */}
-        <h2 style={{ color: '#e65100', marginTop: '30px' }}>Edit Request Details</h2>
-        {Object.entries(config.body).map(([key, value]) => (
+        {/* Headers */}
+        <h2>Request Headers</h2>
+        {Object.entries(headers).map(([key, value]) => (
           <div key={key} style={{ margin: '12px 0' }}>
             <strong>{key}:</strong>
             <input
-              value={value ?? ''}
+              type={key === 'X-Auth-Token' ? 'password' : 'text'}
+              value={value || ''}
+              onChange={e => handleHeaderChange(key, e.target.value)}
+              style={{ width: '100%', padding: '10px', marginTop: '4px', borderRadius: '8px', border: '1px solid #ccc' }}
+            />
+          </div>
+        ))}
+
+        {/* Body */}
+        <h2 style={{ marginTop: '20px' }}>Request Body</h2>
+        {Object.entries(body).map(([key, value]) => (
+          <div key={key} style={{ margin: '12px 0' }}>
+            <strong>{key}:</strong>
+            <input
+              value={value || ''}
               onChange={e => handleBodyChange(key, e.target.value)}
-              placeholder={key}
-              style={{ width: '100%', padding: '12px', marginTop: '4px', borderRadius: '8px', border: '2px solid #ffb74d', fontFamily: 'monospace' }}
+              style={{ width: '100%', padding: '10px', marginTop: '4px', borderRadius: '8px', border: '1px solid #ccc' }}
             />
           </div>
         ))}
@@ -180,7 +170,7 @@ const DownloadGstr1Form = ({ loginResponse }) => {
 
       {/* Result */}
       {result && (
-        <pre style={{ margin: '30px auto', maxWidth: '900px', background: '#1e1e1e', color: '#00e676', padding: '25px', borderRadius: '16px', overflow: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
+        <pre style={{ margin: '30px auto', maxWidth: '900px', background: '#1e1e1e', color: '#00e676', padding: '25px', borderRadius: '16px', overflow: 'auto' }}>
           {JSON.stringify(result, null, 2)}
         </pre>
       )}

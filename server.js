@@ -114,6 +114,40 @@ app.get('/proxy/irn/getInvByIrn', async (req, res) => {
   }
 });
 
+  // Cancel IRN 
+// Proxy for Cancel IRN
+app.put('/proxy/irn/cancel', async (req, res) => {
+  try {
+    const targetUrl = `${BASE_URL}/irisgst/onyx/irn/cancel`;
+
+    // Forwarding all required headers
+    const irisResponse = await fetch(targetUrl, {
+      method: 'PUT',
+      headers: {
+        'Accept': req.headers['accept'] || 'application/json',
+        'Content-Type': req.headers['content-type'] || 'application/json',
+        'companyId': req.headers['companyid'],
+        'X-Auth-Token': req.headers['x-auth-token'],
+        'userGstin': req.headers['usergstin'],
+        'product': req.headers['product'] || 'ONYX'
+      },
+      body: JSON.stringify(req.body)
+    });
+
+    const data = await irisResponse.json();
+    res.status(irisResponse.status).json(data);
+
+  } catch (err) {
+    console.error('Cancel IRN Proxy Error:', err);
+    res.status(500).json({ status: 'FAILURE', message: err.message });
+  }
+});
+
+
+
+
+
+
 // 5. GET IRN BY DOC DETAILS (GetByDocForm)
 app.get('/proxy/irn/getIrnByDocDetails', async (req, res) => {
   try {
@@ -264,7 +298,7 @@ app.put('/proxy/irn/cancelEwb', async (req, res) => {
   try {
     const { ewbNo, cnlRsn, cnlRem, userGstin } = req.body;
 
-    if (!ewbNo || !cnlRsn || !userGstin) {
+    if (!ewbNo || !cnlRsn || !userGstin || cnlRem) {
       return res.status(400).json({
         error: 'Missing required fields: ewbNo, cnlRsn, userGstin'
       });
@@ -414,7 +448,7 @@ app.post("/proxy/onyx/download/einvoices", async (req, res) => {
 
 
 // 15. REQUEST GSTR-1 DOWNLOAD
-app.post('/proxy/download/gstr1', async (req, res) => {
+app.post('/proxy/onyx/download/gstr1', async (req, res) => {
   try {
     const { companyUniqueCode, gstin, returnPeriod } = req.body;
     if (!companyUniqueCode || !gstin || !returnPeriod) {
@@ -557,24 +591,35 @@ app.get('/proxy/user/company/filingbusiness', async (req, res) => {
       });
     }
 
+    // Extract token from incoming request headers
+    const token = req.headers['x-auth-token'];
+
+    if (!token) {
+      return res.status(401).json({
+        error: 'Missing X-Auth-Token'
+      });
+    }
+
     const response = await axios.get(
       `${BASE_URL}/irisgst/mgmt/user/company/filingbusiness`,
       {
-        params: { companyId },
         headers: {
-          'Accept': 'application/json',
-          ...authHeaders(req),
-        },
+          Accept: "application/json",
+          "X-Auth-Token": token,
+          companyId: companyId,       // <-- required in headers only
+        }
       }
     );
 
     res.json(response.data);
+
   } catch (error) {
     res.status(error.response?.status || 500).json(
-      error.response?.data || { error: 'Failed to fetch filing business GSTINs' }
+      error.response?.data || { error: "Failed to fetch filing business GSTINs" }
     );
   }
 });
+
 
 
 // Add Entity Proxy Route
@@ -760,6 +805,10 @@ app.use(cors({
 }));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use(cors({
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+}));
 
 // START SERVER
 app.listen(PORT, '0.0.0.0', () => {

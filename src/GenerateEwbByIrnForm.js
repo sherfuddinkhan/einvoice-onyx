@@ -47,46 +47,58 @@ const GenerateEwbByIrnForm = () => {
   const [loading, setLoading] = useState(false);
 
   // Auto-populate IRN, user GSTIN, and last EWB details
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    const lastIrnData = localStorage.getItem(LAST_IRN_KEY);
-    const lastEwbData = localStorage.getItem(LAST_EWB_KEY);
+ useEffect(() => {
+  // Fetch stored data from localStorage
+  const savedAuth = localStorage.getItem(STORAGE_KEY);
+  const lastIrnData = localStorage.getItem(LAST_IRN_KEY);
+  const lastEwbData = localStorage.getItem(LAST_EWB_KEY);
 
-    setConfig(prev => {
-      let newBody = { ...prev.body };
+  setConfig(prev => {
+    let newBody = { ...prev.body };
 
-      if (lastIrnData) {
-        try {
-          const lastIrn = JSON.parse(lastIrnData);
-          if (lastIrn?.irn) newBody.irn = lastIrn.irn;
-        } catch {}
+    // 1️⃣ Auto-populate last used IRN
+    if (lastIrnData) {
+      try {
+        const lastIrn = JSON.parse(lastIrnData);
+        if (lastIrn?.irn) newBody.irn = lastIrn.irn;
+      } catch (err) {
+        console.error("Failed to parse last IRN data:", err);
       }
+    }
 
-      if (lastEwbData) {
-        try {
-          const lastEwb = JSON.parse(lastEwbData);
-          newBody = { ...newBody, ...lastEwb };
-        } catch {}
+    // 2️⃣ Auto-populate last generated EWB details, especially EwbNo
+    if (lastEwbData) {
+      try {
+        const lastEwb = JSON.parse(lastEwbData);
+        if (lastEwb?.EwbNo) newBody.ewbNo = lastEwb.EwbNo;  // Extract EwbNo
+        // Optionally populate other fields from lastEwb if needed
+        // newBody.EwbDt = lastEwb.EwbDt;
+        // newBody.EwbValidTill = lastEwb.EwbValidTill;
+      } catch (err) {
+        console.error("Failed to parse last EWB data:", err);
       }
+    }
 
-      if (saved) {
-        try {
-          const shared = JSON.parse(saved);
-          newBody.userGstin = shared.companyUniqueCode || newBody.userGstin;
-        } catch {}
+    // 3️⃣ Auto-populate user GSTIN from shared config
+    let headers = { ...prev.headers };
+    if (savedAuth) {
+      try {
+        const shared = JSON.parse(savedAuth);
+        newBody.userGstin = shared.companyUniqueCode || newBody.userGstin;
+        headers.companyId = shared.companyId || headers.companyId;
+        headers['X-Auth-Token'] = shared.token || headers['X-Auth-Token'];
+      } catch (err) {
+        console.error("Failed to parse shared auth data:", err);
       }
+    }
 
-      return {
-        ...prev,
-        body: newBody,
-        headers: {
-          ...prev.headers,
-          companyId: saved ? JSON.parse(saved).companyId : prev.headers.companyId,
-          'X-Auth-Token': saved ? JSON.parse(saved).token : prev.headers['X-Auth-Token'],
-        },
-      };
-    });
-  }, []);
+    return {
+      ...prev,
+      body: newBody,
+      headers
+    };
+  });
+}, []);
 
   const generateEWB = async () => {
     if (!config.body.irn.trim()) {
