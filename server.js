@@ -11,6 +11,10 @@ const upload = multer(); // memory storage (buffer)
 const FormData = require("form-data");
 const PORT = 3001;
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+
 // MIDDLEWARE
 app.use(cors({
   origin: ['http://localhost:3002', 'http://localhost:3000'],
@@ -448,63 +452,91 @@ app.post("/proxy/onyx/download/einvoices", async (req, res) => {
 
 
 // 15. REQUEST GSTR-1 DOWNLOAD
-app.post('/proxy/onyx/download/gstr1', async (req, res) => {
+// 
+app.post("/proxy/onyx/download/gstr1", async (req, res) => {
   try {
     const { companyUniqueCode, gstin, returnPeriod } = req.body;
     if (!companyUniqueCode || !gstin || !returnPeriod) {
-      return res.status(400).json({
-        error: 'Missing required fields: companyUniqueCode, gstin, returnPeriod'
-      });
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const response = await axios.post(
-      `${BASE_URL}/irisgst/onyx/download/gstr1`,
-      req.body,
-      {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          ...authHeaders(req),
-        },
-      }
-    );
-    res.json(response.data);
+    const response = await axios({
+      method: "POST",
+      url: `${BASE_URL}/irisgst/onyx/download/gstr1`,
+      data: req.body,
+      headers: {
+        Accept: "*/*", // Important: accept any content type
+        "Content-Type": "application/json",
+        ...authHeaders(req),
+      },
+      responseType: "arraybuffer", // Critical for binary ZIP
+      validateStatus: () => true, // Handle all statuses
+    });
+
+    // Forward headers
+    if (response.headers["content-type"]) {
+      res.set("Content-Type", response.headers["content-type"]);
+    }
+    if (response.headers["content-disposition"]) {
+      res.set("Content-Disposition", response.headers["content-disposition"]);
+    }
+
+    // Send raw buffer (handles both JSON and ZIP)
+    res.status(response.status).send(response.data);
+
   } catch (error) {
-    res.status(error.response ? error.response.status : 500).json(
-      error.response ? error.response.data : { error: 'Failed to initiate GSTR-1 download' }
-    );
+    console.error("Proxy error:", error.response?.data || error.message);
+    res
+      .status(error.response?.status || 500)
+      .json(error.response?.data || { error: "Failed to download GSTR-1" });
   }
 });
 
+
 // 16. CHECK DOWNLOAD STATUS (E-Invoice or GSTR-1)
-// CORRECT E-INVOICE + GSTR1 DOWNLOAD STATUS ROUTE
-app.get('/proxy/onyx/download/status', async (req, res) => {
+// server.js — Add this route
+// GET: Check download status (official IrisGST Onyx API)
+app.get("/proxy/onyx/download/status", async (req, res) => {
   try {
     const { companyCode, downloadType, downloadId } = req.query;
 
     if (!companyCode || !downloadType || !downloadId) {
       return res.status(400).json({
-        error: 'Missing required query params: companyCode, downloadType, downloadId'
+        error: "Missing required query params: companyCode, downloadType, downloadId"
       });
     }
 
-    const response = await axios.get(`${BASE_URL}/irisgst/onyx/download/status`, {
-      params: { companyCode, downloadType, downloadId },
-      headers: {
-        Accept: "application/json",
-        product: "ONYX",
-        ...authHeaders(req),
-      },
-    });
+    const response = await axios.get(
+      `${BASE_URL}/irisgst/onyx/download/status`,
+      {
+        params: {
+          companyCode,
+          downloadType, // Dnld_Gstr1 or EINV_DATA
+          downloadId,   // <--- required now
+        },
+        headers: {
+          Accept: "application/json",
+          companyId: req.headers["companyid"],
+          "X-Auth-Token": req.headers["x-auth-token"],
+          product: req.headers["product"] || "ONYX",
+        },
+      }
+    );
 
     res.json(response.data);
   } catch (error) {
-    console.error("Download status error:", error.response?.data || error.message);
-    res.status(error.response?.status || 500).json(
-      error.response?.data || { error: "Failed to check download status" }
+    console.error(
+      "Download status error:",
+      error.response?.data || error.message
     );
+    res
+      .status(error.response?.status || 500)
+      .json(
+        error.response?.data || { error: "Failed to check download status" }
+      );
   }
 });
+
 
 // 17. GET BUSINESS HIERARCHY
 app.get('/proxy/company/businesshierarchy', async (req, res) => {

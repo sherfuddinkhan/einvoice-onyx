@@ -1,181 +1,219 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
 
-const SHARED_STORAGE_KEY = 'iris_gstr1_shared_values';
+// Storage keys
+const STORAGE_KEY = "iris_einvoice_shared_config";
+const DOWNLOAD_ID_KEY = "iris_einvoice_last_download_id";
 
-const DownloadStatusForm = () => {
-  const [config, setConfig] = useState({
-    proxyBase: 'http://localhost:3001',
-    endpoint: '/proxy/onyx/download/status',
-    companyCode: '',
-    downloadType: 'Dnld_Gstr1',
-    headers: {
-      Accept: 'application/json',
-      companyId: '',
-      'X-Auth-Token': '',
-      product: 'ONYX'
-    }
+const DownloadStatusForm = ({ previousResponse }) => {
+  // ----------------- STATES -----------------
+  const [headers, setHeaders] = useState({
+    Accept: "application/json",
+    companyId: "",
+    "X-Auth-Token": "",
+    product: "ONYX",
   });
 
-  const [response, setResponse] = useState(null);
+  const [query, setQuery] = useState({
+    companyCode: "",
+    downloadType: "Dnld_Gstr1", // default GSTR1
+    downloadId: "", // NEW: auto-populate downloadId
+  });
+
   const [loading, setLoading] = useState(false);
+  const [response, setResponse] = useState(null);
 
-  // Load saved values from localStorage
+  // ----------------- AUTO POPULATE -----------------
   useEffect(() => {
-    const saved = localStorage.getItem(SHARED_STORAGE_KEY);
-    let companyId = 'TEST_COMPANY';
-    let token = 'TEST_TOKEN';
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const savedDownloadId = localStorage.getItem(DOWNLOAD_ID_KEY) || "";
 
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        console.parsed("saved items",parsed)
-        companyId = parsed?.CompanyId || companyId;
-        token = parsed?.Token || token;
-      } catch (e) {
-        console.warn('Failed to parse shared storage:', e);
-      }
-    } else {
-      console.warn('No shared storage found for GSTR-1. Using fallback values.');
-    }
+    const autoCompanyId =
+      previousResponse?.response?.companyid || saved.companyId || "";
+    const autoToken =
+      previousResponse?.response?.token || saved.token || "";
+    const autoCompanyCode =
+      previousResponse?.response?.companyUniqueCode ||
+      saved.companyUniqueCode ||
+      "";
 
-    setConfig(prev => ({
+    setHeaders((prev) => ({
       ...prev,
-      companyCode: companyId,
-      headers: {
-        ...prev.headers,
-        companyId,
-        'X-Auth-Token': token
-      }
+      companyId: autoCompanyId,
+      "X-Auth-Token": autoToken,
     }));
-  }, []);
 
-  const handleDownloadTypeChange = (e) => {
-    setConfig(prev => ({ ...prev, downloadType: e.target.value }));
-  };
+    setQuery((prev) => ({
+      ...prev,
+      companyCode: autoCompanyCode,
+      downloadId: savedDownloadId, // auto-populate last downloadId
+    }));
 
+    // Save to localStorage for future sessions
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        companyId: autoCompanyId,
+        token: autoToken,
+        companyUniqueCode: autoCompanyCode,
+      })
+    );
+  }, [previousResponse]);
+
+  // ----------------- CHECK STATUS -----------------
   const checkStatus = async () => {
-    if (!config.companyCode) {
-      alert('Company code is missing!');
+    if (!headers.companyId || !headers["X-Auth-Token"] || !query.companyCode) {
+      alert("Please fill all required fields!");
       return;
     }
 
     setLoading(true);
     setResponse(null);
 
-    const url = `${config.proxyBase}${config.endpoint}?companyCode=${config.companyCode}&downloadType=${config.downloadType}`;
-
     try {
-      const res = await fetch(url, { headers: config.headers });
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const data = await res.json();
-      setResponse({ body: data, time: new Date().toLocaleString('en-IN') });
+      const res = await axios.get(
+        "http://localhost:3001/proxy/onyx/download/status",
+        {
+          headers,
+          params: {
+            companyCode: query.companyCode,
+            downloadType: query.downloadType,
+            downloadId: query.downloadId, // pass downloadId if available
+          },
+        }
+      );
+
+      setResponse(res.data);
+
+      // If API returns a downloadId, save it locally
+      const downloadIdFromResponse = res.data.response?.downloadId;
+      if (downloadIdFromResponse) {
+        localStorage.setItem(DOWNLOAD_ID_KEY, downloadIdFromResponse);
+        setQuery((prev) => ({ ...prev, downloadId: downloadIdFromResponse }));
+      }
     } catch (err) {
-      setResponse({ error: err.message });
-    } finally {
-      setLoading(false);
+      setResponse({
+        error: err.response?.data || err.message || "Network error",
+      });
     }
+
+    setLoading(false);
   };
 
-  const fileUrl = response?.body?.response?.filePath;
+  const fileUrl = response?.response?.filePath;
 
   return (
-    <div style={{ padding: '30px', background: '#e8f5ff', fontFamily: 'Segoe UI', minHeight: '100vh' }}>
-      <h1 style={{ color: '#1a73e8' }}>Download Status</h1>
-      <p style={{ color: '#666' }}>Fill headers and query parameters</p>
+    <div style={{ padding: "30px", fontFamily: "Segoe UI", maxWidth: "800px", margin: "auto" }}>
+      <h1>GSTR-1 / E-Invoice Download Status</h1>
+      <p>Auto-populated from previous login, saved session, or last download.</p>
 
-      <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 8px 25px rgba(0,0,0,0.15)' }}>
-        <h3>Headers (Auto-filled from Login API)</h3>
-        {['companyId', 'X-Auth-Token', 'product', 'Accept'].map(key => (
-          <div key={key} style={{ margin: '12px 0', display: 'flex', flexDirection: 'column' }}>
-            <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-              {key} {['companyId', 'X-Auth-Token'].includes(key) ? '*' : ''}
-            </label>
-            <small style={{ color: '#666', marginBottom: '4px' }}>
-              {key === 'companyId' ? 'As provided in Login API response' :
-               key === 'X-Auth-Token' ? 'As provided in Login API response' :
-               key === 'product' ? 'Identification of product. Default: ONYX' :
-               'Request content type'}
-            </small>
-            <input
-              value={config.headers[key] || ''}
-              readOnly
-              style={{ padding: '10px', fontFamily: 'monospace', background: '#f0f8ff' }}
-              type={key.includes('Token') ? 'password' : 'text'}
-            />
-          </div>
-        ))}
-
-        <h3 style={{ marginTop: '25px' }}>Query Parameters</h3>
-
-        <div style={{ margin: '12px 0', display: 'flex', flexDirection: 'column' }}>
-          <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>companyCode *</label>
-          <small style={{ color: '#666', marginBottom: '4px' }}>As provided in Login API response</small>
+      {/* ---------------- HEADERS ---------------- */}
+      <h3>Headers</h3>
+      {["companyId", "X-Auth-Token", "product", "Accept"].map((key) => (
+        <div key={key} style={{ marginBottom: "12px" }}>
+          <label>{key}:</label>
           <input
-            value={config.companyCode}
-            readOnly
-            style={{ padding: '10px', fontFamily: 'monospace', background: '#f0f8ff' }}
+            type={key === "X-Auth-Token" ? "password" : "text"}
+            value={headers[key]}
+            onChange={(e) =>
+              setHeaders({ ...headers, [key]: e.target.value })
+            }
+            style={{ width: "100%", padding: "8px", fontFamily: "monospace" }}
           />
         </div>
+      ))}
 
-        <div style={{ margin: '12px 0', display: 'flex', flexDirection: 'column' }}>
-          <label style={{ fontWeight: 'bold', marginBottom: '4px' }}>downloadType *</label>
-          <small style={{ color: '#666', marginBottom: '4px' }}>
-            Dnld_Gstr1: Download GSTR1 data | EINV_DATA: Download e-invoice data
-          </small>
-          <select
-            value={config.downloadType}
-            onChange={handleDownloadTypeChange}
-            style={{ padding: '10px', fontFamily: 'monospace' }}
-          >
-            <option value="Dnld_Gstr1">Dnld_Gstr1</option>
-            <option value="EINV_DATA">EINV_DATA</option>
-          </select>
-        </div>
+      {/* ---------------- QUERY PARAMETERS ---------------- */}
+      <h3>Query Parameters</h3>
 
-        <button
-          onClick={checkStatus}
-          disabled={loading}
-          style={{
-            marginTop: '30px',
-            padding: '18px 60px',
-            background: loading ? '#999' : '#1a73e8',
-            color: 'white',
-            border: 'none',
-            borderRadius: '12px',
-            fontSize: '22px',
-            fontWeight: 'bold',
-            cursor: loading ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {loading ? 'Checking...' : 'CHECK STATUS'}
-        </button>
+      <div style={{ marginBottom: "12px" }}>
+        <label>companyCode:</label>
+        <input
+          type="text"
+          value={query.companyCode}
+          onChange={(e) =>
+            setQuery({ ...query, companyCode: e.target.value })
+          }
+          style={{ width: "100%", padding: "8px", fontFamily: "monospace" }}
+        />
       </div>
 
+      <div style={{ marginBottom: "12px" }}>
+        <label>downloadId:</label>
+        <input
+          type="text"
+          value={query.downloadId}
+          onChange={(e) =>
+            setQuery({ ...query, downloadId: e.target.value })
+          }
+          style={{ width: "100%", padding: "8px", fontFamily: "monospace" }}
+        />
+      </div>
+
+      <div style={{ marginBottom: "12px" }}>
+        <label>downloadType:</label>
+        <select
+          value={query.downloadType}
+          onChange={(e) =>
+            setQuery({ ...query, downloadType: e.target.value })
+          }
+          style={{ width: "100%", padding: "8px" }}
+        >
+          <option value="Dnld_Gstr1">Dnld_Gstr1 (GSTR-1)</option>
+          <option value="EINV_DATA">EINV_DATA (E-Invoice)</option>
+        </select>
+      </div>
+
+      <button
+        onClick={checkStatus}
+        disabled={loading}
+        style={{
+          padding: "12px 24px",
+          fontSize: "18px",
+          background: loading ? "#999" : "#1a73e8",
+          color: "white",
+          border: "none",
+          borderRadius: "8px",
+          cursor: loading ? "not-allowed" : "pointer",
+        }}
+      >
+        {loading ? "Checking..." : "Check Status"}
+      </button>
+
+      {/* ---------------- DOWNLOAD LINK ---------------- */}
       {fileUrl && (
-        <div style={{ marginTop: '40px', padding: '40px', background: '#e8f5e8', borderRadius: '20px', textAlign: 'center' }}>
-          <h2 style={{ color: '#34a853' }}>Download Ready!</h2>
+        <div
+          style={{
+            marginTop: "20px",
+            padding: "20px",
+            background: "#dfffe0",
+            borderRadius: "8px",
+          }}
+        >
+          <h3>Download Ready!</h3>
           <a
             href={fileUrl}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              padding: '20px 60px',
-              background: '#34a853',
-              color: 'white',
-              fontSize: '24px',
-              textDecoration: 'none',
-              borderRadius: '16px',
-              fontWeight: 'bold'
-            }}
+            style={{ color: "#34a853", fontWeight: "bold", fontSize: "18px" }}
           >
-            DOWNLOAD FILE
+            Click here to download
           </a>
         </div>
       )}
 
+      {/* ---------------- RAW RESPONSE ---------------- */}
       {response && (
-        <pre style={{ marginTop: '25px', background: '#333', color: '#0f0', padding: '20px', borderRadius: '12px' }}>
-          {JSON.stringify(response.body || response, null, 2)}
+        <pre
+          style={{
+            marginTop: "20px",
+            background: "#f4f4f4",
+            padding: "12px",
+            borderRadius: "6px",
+            overflowX: "auto",
+          }}
+        >
+          {JSON.stringify(response, null, 2)}
         </pre>
       )}
     </div>

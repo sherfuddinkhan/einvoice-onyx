@@ -3,12 +3,11 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 
 const STORAGE_KEY = "iris_einvoice_shared_config";
+const DOWNLOAD_ID_KEY = "iris_einvoice_last_download_id";
 
 const DownloadEInvoicesForm = ({ previousResponse }) => {
-  // Load saved config from localStorage
   const savedConfig = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
 
-  // ========== AUTO-POPULATE GSTIN + COMPANY CODE ==========
   const initialGstin = previousResponse?.userGstin
     || previousResponse?.companyGstin
     || previousResponse?.gstin
@@ -21,7 +20,6 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
     || previousResponse?.userGstin
     || "";
 
-  // ========== HEADERS ==========
   const [headers, setHeaders] = useState({
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -30,7 +28,6 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
     "X-Auth-Token": previousResponse?.token || savedConfig?.token || "",
   });
 
-  // ========== FORM DATA ==========
   const [formData, setFormData] = useState({
     invStatus: previousResponse?.invStatus || ["IRN_GENERATED", "EWB_GENERATED", "BOTH"],
     catg: previousResponse?.catg || ["B2B", "SEWOP", "SEWP", "EXWP", "EXWOP", "DE"],
@@ -41,7 +38,10 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
     companyUniqueCode: initialCompanyCode,
   });
 
-  // ========== UPDATE HEADERS IF previousResponse CHANGES ==========
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [lastDownloadId, setLastDownloadId] = useState(localStorage.getItem(DOWNLOAD_ID_KEY) || null);
+
   useEffect(() => {
     if (previousResponse) {
       setHeaders(prev => ({
@@ -58,10 +58,6 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
     }
   }, [previousResponse]);
 
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-
-  // ========== INPUT HANDLER ==========
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     if (name === "invStatus" || name === "catg") {
@@ -77,7 +73,6 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
     }
   };
 
-  // ========== ONE-CLICK DOWNLOAD ==========
   const downloadNow = async () => {
     setLoading(true);
     setResult(null);
@@ -91,11 +86,17 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
 
       setResult(response.data);
 
+      const downloadId = response.data.response?.downloadId;
+      if (downloadId) {
+        // Store downloadId locally
+        localStorage.setItem(DOWNLOAD_ID_KEY, downloadId);
+        setLastDownloadId(downloadId);
+        alert(`Download started! Download ID: ${downloadId}\nCheck IRIS portal → Downloads.`);
+      }
+
       const filePath = response.data.response?.filePath;
       if (filePath) {
         window.open(filePath, "_blank");
-      } else {
-        alert(`Download started! ID: ${response.data.response?.downloadId}\nCheck IRIS portal → Downloads.`);
       }
     } catch (error) {
       console.error(error);
@@ -105,10 +106,15 @@ const DownloadEInvoicesForm = ({ previousResponse }) => {
     }
   };
 
-  // ========== RENDER ==========
   return (
     <div style={{ maxWidth: "700px", margin: "30px auto", fontFamily: "Segoe UI, Arial" }}>
       <h2 style={{ color: "#1e3a8a" }}>Download E-Invoices (One-Click)</h2>
+
+      {lastDownloadId && (
+        <div style={{ marginBottom: 20, padding: 10, background: "#fef9c3", borderRadius: 6 }}>
+          <strong>Last Download ID:</strong> {lastDownloadId}
+        </div>
+      )}
 
       <div style={{ marginBottom: 20, padding: 15, background: "#f0f8ff", borderRadius: 8 }}>
         <strong>Headers:</strong>

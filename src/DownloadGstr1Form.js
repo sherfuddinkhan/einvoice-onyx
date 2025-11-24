@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 
 const STORAGE_KEY = "iris_einvoice_shared_config";
 
-// Helper to get current return period (MMYYYY)
+// ---------- Helper ----------
 const getCurrentPeriod = () => {
   const now = new Date();
-  return String(now.getMonth() + 1).padStart(2, '0') + now.getFullYear();
+  return String(now.getMonth() + 1).padStart(2, "0") + now.getFullYear();
 };
 
 const DownloadGstr1Form = ({ previousResponse }) => {
@@ -13,24 +13,23 @@ const DownloadGstr1Form = ({ previousResponse }) => {
 
   // ---------- STATE ----------
   const [headers, setHeaders] = useState({
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-    companyId: '',          // auto-populated
-    'X-Auth-Token': '',     // auto-populated
-    product: 'ONYX',
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    companyId: "",
+    "X-Auth-Token": "",
+    product: "ONYX",
   });
 
- const [body, setBody] = useState({
-  companyUniqueCode: '', // <-- ADD THIS
-  gstin: '',
-  returnPeriod: getCurrentPeriod(),
-});
-
+  const [body, setBody] = useState({
+    gstin: "",
+    companyUniqueCode: "",
+    returnPeriod: getCurrentPeriod(),
+  });
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
 
-  // ---------- AUTO-POPULATE HEADERS AND BODY ----------
+  // ---------- AUTO POPULATE ----------
   useEffect(() => {
     const autoCompanyId =
       previousResponse?.response?.companyid ||
@@ -47,40 +46,50 @@ const DownloadGstr1Form = ({ previousResponse }) => {
       savedConfig.companyUniqueCode ||
       "";
 
-    setHeaders(prev => ({
+    setHeaders((prev) => ({
       ...prev,
       companyId: autoCompanyId,
-      'X-Auth-Token': autoToken,
-      product: 'ONYX',
+      "X-Auth-Token": autoToken,
     }));
 
-    setBody(prev => ({
+    setBody((prev) => ({
       ...prev,
       gstin: autoGstin,
-      companyUniqueCode:autoGstin
+      companyUniqueCode: autoGstin,
     }));
 
-    // Save back to localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      companyId: autoCompanyId,
-      token: autoToken,
-      companyUniqueCode: autoGstin
-    }));
+    // Save to localStorage
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        companyId: autoCompanyId,
+        token: autoToken,
+        companyUniqueCode: autoGstin,
+      })
+    );
   }, [previousResponse]);
 
   // ---------- HANDLERS ----------
   const handleBodyChange = (key, value) => {
-    setBody(prev => ({ ...prev, [key]: value }));
+    setBody((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleHeaderChange = (key, value) => {
-    setHeaders(prev => ({ ...prev, [key]: value }));
+    setHeaders((prev) => ({ ...prev, [key]: value }));
   };
+
+  // ---------- VALIDATION ----------
+  const isReady =
+    headers.companyId &&
+    headers["X-Auth-Token"] &&
+    body.gstin &&
+    body.companyUniqueCode &&
+    body.returnPeriod;
 
   // ---------- API CALL ----------
   const startDownload = async () => {
-    if (!headers.companyId || !headers['X-Auth-Token'] || !body.gstin ||body.companyUniqueCode || !body.returnPeriod) {
-      alert('Missing Company ID, Auth Token, GSTIN, or Return Period!');
+    if (!isReady) {
+      alert("Missing required fields!");
       return;
     }
 
@@ -88,89 +97,145 @@ const DownloadGstr1Form = ({ previousResponse }) => {
     setResult(null);
 
     try {
-      const res = await fetch('http://localhost:3001/proxy/download/gstr1', {
-        method: 'POST',
-        headers,
+      const res = await fetch("http://localhost:3001/proxy/onyx/download/gstr1", {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "companyId": headers.companyId,
+          "X-Auth-Token": headers["X-Auth-Token"],
+          "product": "ONYX",
+        },
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      // Try to parse JSON response
+      const text = await res.text();
+      console.log("RAW RESPONSE:", text);
+
+      let data;
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: "Server returned HTML instead of JSON", raw: text };
+      }
+
       setResult(data);
 
-      if (res.ok && data.status === 'SUCCESS') {
-        alert(`GSTR-1 Download Requested!\nCheck IRIS Portal`);
+      if (res.ok && data.status === "SUCCESS") {
+        alert("GSTR-1 Download Requested!");
       } else {
-        alert(`API Error: ${data.message || 'Unknown response from server.'}`);
+        alert("API Error: " + (data.message || "Unexpected response"));
       }
     } catch (err) {
       setResult({ error: err.message });
-      alert(`Network Error: ${err.message}`);
+      alert("Network Error: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const isReady = headers.companyId && headers['X-Auth-Token'] && body.gstin && body.returnPeriod;
-
-  // ---------- RENDER ----------
+  // ---------- UI ----------
   return (
-    <div style={{ padding: '30px', background: '#fff8e1', minHeight: '100vh', fontFamily: 'Segoe UI' }}>
-      <h1 style={{ color: '#d32f2f', fontSize: '36px' }}>GSTR-1 Download Request 🇮🇳</h1>
-      <p style={{ color: '#666', fontSize: '16px' }}>Headers and GSTIN auto-populated from login or last session.</p>
+    <div
+      style={{
+        padding: "30px",
+        background: "#fff8e1",
+        minHeight: "100vh",
+        fontFamily: "Segoe UI",
+      }}
+    >
+      <h1 style={{ color: "#d32f2f", fontSize: "36px" }}>
+        GSTR-1 Download Request 🇮🇳
+      </h1>
 
-      <div style={{ background: 'white', padding: '35px', borderRadius: '20px', maxWidth: '900px', margin: '20px auto', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
-        
-        {/* Headers */}
+      <p style={{ color: "#666", fontSize: "16px" }}>
+        Headers and GSTIN auto-populated from login / previous session.
+      </p>
+
+      <div
+        style={{
+          background: "white",
+          padding: "35px",
+          borderRadius: "20px",
+          maxWidth: "900px",
+          margin: "20px auto",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+        }}
+      >
+        {/* HEADERS */}
         <h2>Request Headers</h2>
         {Object.entries(headers).map(([key, value]) => (
-          <div key={key} style={{ margin: '12px 0' }}>
+          <div key={key} style={{ margin: "12px 0" }}>
             <strong>{key}:</strong>
             <input
-              type={key === 'X-Auth-Token' ? 'password' : 'text'}
-              value={value || ''}
-              onChange={e => handleHeaderChange(key, e.target.value)}
-              style={{ width: '100%', padding: '10px', marginTop: '4px', borderRadius: '8px', border: '1px solid #ccc' }}
+              type={key === "X-Auth-Token" ? "password" : "text"}
+              value={value || ""}
+              onChange={(e) => handleHeaderChange(key, e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginTop: "4px",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+              }}
             />
           </div>
         ))}
 
-        {/* Body */}
-        <h2 style={{ marginTop: '20px' }}>Request Body</h2>
+        {/* BODY */}
+        <h2 style={{ marginTop: "20px" }}>Request Body</h2>
         {Object.entries(body).map(([key, value]) => (
-          <div key={key} style={{ margin: '12px 0' }}>
+          <div key={key} style={{ margin: "12px 0" }}>
             <strong>{key}:</strong>
             <input
-              value={value || ''}
-              onChange={e => handleBodyChange(key, e.target.value)}
-              style={{ width: '100%', padding: '10px', marginTop: '4px', borderRadius: '8px', border: '1px solid #ccc' }}
+              value={value || ""}
+              onChange={(e) => handleBodyChange(key, e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginTop: "4px",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+              }}
             />
           </div>
         ))}
 
-        {/* Action Button */}
+        {/* BUTTON */}
         <button
           onClick={startDownload}
           disabled={!isReady || loading}
           style={{
-            width: '100%',
-            padding: '24px',
-            marginTop: '30px',
-            background: !isReady || loading ? '#999' : '#ea4335',
-            color: 'white',
-            border: 'none',
-            borderRadius: '16px',
-            fontSize: '28px',
-            fontWeight: 'bold',
-            cursor: !isReady || loading ? 'not-allowed' : 'pointer',
+            width: "100%",
+            padding: "24px",
+            marginTop: "30px",
+            background: !isReady || loading ? "#999" : "#ea4335",
+            color: "white",
+            border: "none",
+            borderRadius: "16px",
+            fontSize: "28px",
+            fontWeight: "bold",
+            cursor: !isReady || loading ? "not-allowed" : "pointer",
           }}
         >
-          {loading ? 'Starting...' : 'START GSTR-1 DOWNLOAD'}
+          {loading ? "Starting..." : "START GSTR-1 DOWNLOAD"}
         </button>
       </div>
 
-      {/* Result */}
       {result && (
-        <pre style={{ margin: '30px auto', maxWidth: '900px', background: '#1e1e1e', color: '#00e676', padding: '25px', borderRadius: '16px', overflow: 'auto' }}>
+        <pre
+          style={{
+            margin: "30px auto",
+            maxWidth: "900px",
+            background: "#1e1e1e",
+            color: "#00e676",
+            padding: "25px",
+            borderRadius: "16px",
+            overflow: "auto",
+          }}
+        >
           {JSON.stringify(result, null, 2)}
         </pre>
       )}
