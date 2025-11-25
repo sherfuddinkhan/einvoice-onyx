@@ -118,7 +118,7 @@ const AddEntityForm = ({ previousResponse }) => {
 
           {key === "entitytype" ? (
             <select name={key} value={formData[key]} onChange={handleChange}>
-              <option value="ROOT">ROOT</option>
+              <option value="ROOT">POB</option>
               <option value="LEGAL">LEGAL</option>
               <option value="FILING">FILING</option>
               <option value="BUSINESS">BUSINESS</option>

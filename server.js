@@ -611,7 +611,8 @@ app.get('/proxy/user/getAssignedPlaceOfBusinesses', async (req, res) => {
       error.response ? error.response.data : { error: 'Failed to fetch assigned places of business' }
     );
   }
-});
+}); 
+
 // 20. GET ASSIGNED GSTINS (FILING BUSINESS)
 app.get('/proxy/user/company/filingbusiness', async (req, res) => {
   try {

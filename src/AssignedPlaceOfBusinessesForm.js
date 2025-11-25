@@ -68,7 +68,7 @@ const AssignedPlaceOfBusinessesForm = ({ previousResponse }) => {
     setPobList([]);
     setRawResponse(null);
 
-    const finalURL = `${config.proxyBase}${config.endpoint}?companyid=${config.queryCompanyId}`;
+    const finalURL = `${config.proxyBase}${config.endpoint}?companyId=${config.queryCompanyId}`;
 
     try {
       const res = await axios.get(finalURL, {
