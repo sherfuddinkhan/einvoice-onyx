@@ -1,7 +1,7 @@
 // GenerateIRNForm.js - Full Working Version with Cleaned UI and Styles
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../AuthContext';
 
 // -------------------------
 // CONSTANTS & KEYS

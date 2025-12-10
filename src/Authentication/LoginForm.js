@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../AuthContext';
 
 // Define the common storage key
 const STORAGE_KEY = 'iris_einvoice_shared_config';

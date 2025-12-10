@@ -1,6 +1,6 @@
 // src/components/GetByIRNForm.js
 import React, { useState, useEffect } from 'react';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../AuthContext';
 
 const GetByIRNForm = () => {
   const { authToken, lastIrn, lastUserGstin } = useAuth();
