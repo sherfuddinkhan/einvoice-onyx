@@ -1,6 +1,6 @@
 // src/components/UploadErrors.js
 import React, { useState } from "react";
-import { getUploadErrors } from "./api/onyxApi";
+import { getUploadErrors } from "../api/onyxApi";
 
 
 const UploadErrors = () => {
